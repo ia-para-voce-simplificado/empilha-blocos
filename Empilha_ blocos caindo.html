@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Empilha: blocos caindo</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#020204;--ink:#f1f4ff;--muted:#9aa0c7;--lime:#8cff2e;--violet:#7b3cff;--head:Orbitron,"Trebuchet MS",sans-serif;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
+html{background:var(--bg);scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font:500 14px/1.4 system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;gap:12px;padding:10px 12px 20px;overflow-x:hidden;-webkit-user-select:none;user-select:none}
+h1{font:900 18px var(--head);margin:0;color:var(--lime);letter-spacing:.04em}
+.row{display:flex;gap:12px;align-items:flex-start;justify-content:center}
+.stage{position:relative}
+#cv{height:min(54vh,440px);width:auto;display:block;border:2px solid var(--violet);background:#05030d;touch-action:none}
+#msg{position:absolute;inset:0;display:grid;place-content:center;gap:8px;text-align:center;background:#000b;font:900 18px/1.3 var(--head);padding:14px;cursor:pointer}
+#msg[hidden]{display:none}
+#msg small{font:500 13px/1.4 system-ui,sans-serif;color:var(--muted)}
+.side{display:grid;gap:8px;width:84px;font:700 10px var(--head);color:var(--muted)}
+.side b{display:block;color:var(--lime);font-size:15px;margin-top:2px}
+#nx{width:64px;height:144px;display:block;margin-top:4px}
+.pad{display:flex;gap:8px}
+button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
+.pad button{width:58px;height:52px;border:1.5px solid var(--violet);background:#15112e;font-size:20px;border-radius:8px}
+.pad button:active{background:var(--violet)}
+.pad .hi{border-color:var(--lime)}
+:focus-visible{outline:3px solid var(--lime);outline-offset:2px}
+</style>
+</head>
+<body>
+<h1>EMPILHA</h1>
+<div class="row">
+  <div class="stage"><canvas id="cv"></canvas><div id="msg" role="button" tabindex="0"></div></div>
+  <div class="side">
+    <div>Pontos<b id="sc">0</b></div>
+    <div>Linhas<b id="ln">0</b></div>
+    <div>Nível<b id="lv">1</b></div>
+    <div>Recorde<b id="bs">0</b></div>
+    <div>Próximas<canvas id="nx"></canvas></div>
+  </div>
+</div>
+<div class="pad">
+  <button data-a="l" aria-label="Esquerda">◀</button>
+  <button data-a="d" aria-label="Descer">▼</button>
+  <button data-a="r" aria-label="Direita">▶</button>
+  <button data-a="rot" class="hi" aria-label="Girar">⟳</button>
+  <button data-a="drop" class="hi" aria-label="Largar">⤓</button>
+</div>
+<script>
+const C=10,N=20,T=24,S=16;
+const P=[
+[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+[[1,1],[1,1]],
+[[0,1,0],[1,1,1],[0,0,0]],
+[[0,1,1],[1,1,0],[0,0,0]],
+[[1,1,0],[0,1,1],[0,0,0]],
+[[1,0,0],[1,1,1],[0,0,0]],
+[[0,0,1],[1,1,1],[0,0,0]]];
+const COL=["#4fe8ff","#ffe14d","#b36bff","#8cff2e","#ff3b4e","#4d7bff","#ffa23b"];
+const $=s=>document.querySelector(s),cv=$("#cv"),x=cv.getContext("2d"),nx=$("#nx"),y=nx.getContext("2d"),msg=$("#msg");
+cv.width=C*T*2;cv.height=N*T*2;x.scale(2,2);
+nx.width=4*S*2;nx.height=9*S*2;y.scale(2,2);
+let board,cur,queue,bag,score,lines,level,tick,state="ready",best=0;
+try{best=+localStorage.getItem("empilha")||0}catch(e){}
+const rot=m=>m[0].map((_,i)=>m.map(r=>r[i]).reverse());
+function newBag(){const a=[0,1,2,3,4,5,6];for(let i=6;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a}
+const draw7=()=>{if(!bag.length)bag=newBag();return bag.pop()};
+function hit(m,px,py){return m.some((row,i)=>row.some((v,j)=>{if(!v)return false;const X=px+j,Y=py+i;return X<0||X>=C||Y>=N||(Y>=0&&board[Y][X])}))}
+function show(h,s){msg.innerHTML=h+"<small>"+s+"</small>";msg.hidden=false}
+function saveBest(){if(score>best){best=score;try{localStorage.setItem("empilha",best)}catch(e){}}}
+function reset(){board=Array.from({length:N},()=>Array(C).fill(0));bag=[];queue=[draw7(),draw7(),draw7()];score=0;lines=0;level=1;tick=0;spawn()}
+function spawn(){
+  const id=queue.shift();queue.push(draw7());
+  const m=P[id].map(r=>[...r]);
+  cur={id,m,x:(C-m.length)/2|0,y:0};
+  mini();
+  if(hit(cur.m,cur.x,cur.y)){state="over";saveBest();show("FIM DE JOGO","Pontos: "+score+" · Recorde: "+best+"<br>Toque para jogar de novo")}
+}
+function go(){if(state==="over")reset();state="play";msg.hidden=true}
+function move(dx,dy){
+  if(state!=="play"||hit(cur.m,cur.x+dx,cur.y+dy))return false;
+  cur.x+=dx;cur.y+=dy;return true;
+}
+function rotate(){
+  if(state!=="play")return;
+  const m=rot(cur.m);
+  for(const k of[0,-1,1,-2,2])if(!hit(m,cur.x+k,cur.y)){cur.m=m;cur.x+=k;return}
+}
+function hardDrop(){
+  if(state!=="play")return;
+  let d=0;while(!hit(cur.m,cur.x,cur.y+1)){cur.y++;d++}
+  score+=2*d;lock();
+}
+function lock(){
+  cur.m.forEach((row,i)=>row.forEach((v,j)=>{if(v&&cur.y+i>=0)board[cur.y+i][cur.x+j]=cur.id+1}));
+  let n=0;
+  board=board.filter(r=>r.some(v=>!v)||(n++,false));
+  while(board.length<N)board.unshift(Array(C).fill(0));
+  if(n){score+=[0,100,300,500,800][n]*level;lines+=n;level=1+(lines/10|0)}
+  tick=0;spawn();
+}
+const ACT={l:()=>move(-1,0),r:()=>move(1,0),d:()=>{if(move(0,1)){score++;tick=0}},rot:rotate,drop:hardDrop};
+function update(dt){
+  if(state!=="play")return;
+  tick+=dt*1000;
+  if(tick>=Math.max(90,800-(level-1)*65)){tick=0;if(!move(0,1))lock()}
+}
+function cell(c,id,X,Y,s,a){c.globalAlpha=a||1;c.fillStyle=COL[id];c.fillRect(X+1,Y+1,s-2,s-2);c.fillStyle="#fff5";c.fillRect(X+1,Y+1,s-2,3);c.globalAlpha=1}
+function mini(){
+  y.clearRect(0,0,4*S,9*S);
+  queue.forEach((id,k)=>{
+    const cs=[];P[id].forEach((r,i)=>r.forEach((v,j)=>v&&cs.push([i,j])));
+    const i0=Math.min(...cs.map(c=>c[0])),j0=Math.min(...cs.map(c=>c[1])),
+      w=Math.max(...cs.map(c=>c[1]))-j0+1,h=Math.max(...cs.map(c=>c[0]))-i0+1;
+    cs.forEach(([i,j])=>cell(y,id,(4-w)/2*S+(j-j0)*S,k*3*S+(3-h)/2*S+(i-i0)*S,S));
+  });
+}
+function draw(){
+  x.fillStyle="#05030d";x.fillRect(0,0,C*T,N*T);
+  x.strokeStyle="#1a1442";x.lineWidth=1;x.beginPath();
+  for(let i=1;i<C;i++){x.moveTo(i*T,0);x.lineTo(i*T,N*T)}
+  for(let j=1;j<N;j++){x.moveTo(0,j*T);x.lineTo(C*T,j*T)}
+  x.stroke();
+  board.forEach((row,r)=>row.forEach((v,c)=>{if(v)cell(x,v-1,c*T,r*T,T)}));
+  let gy=cur.y;while(!hit(cur.m,cur.x,gy+1))gy++;
+  cur.m.forEach((row,i)=>row.forEach((v,j)=>{
+    if(!v)return;
+    x.globalAlpha=.55;x.strokeStyle=COL[cur.id];x.lineWidth=1.5;
+    x.strokeRect((cur.x+j)*T+3,(gy+i)*T+3,T-6,T-6);x.globalAlpha=1;
+    if(cur.y+i>=0)cell(x,cur.id,(cur.x+j)*T,(cur.y+i)*T,T);
+  }));
+  $("#sc").textContent=score;$("#ln").textContent=lines;$("#lv").textContent=level;$("#bs").textContent=Math.max(best,score);
+}
+let last=0;
+function loop(ts){const dt=Math.min((ts-last)/1000,.05);last=ts;update(dt);draw();requestAnimationFrame(loop)}
+
+let rep,hold;
+const stopRep=()=>{clearTimeout(hold);clearInterval(rep)};
+document.querySelectorAll(".pad button").forEach(b=>{
+  const f=ACT[b.dataset.a],rp="lrd".includes(b.dataset.a);
+  b.onpointerdown=e=>{
+    e.preventDefault();
+    if(state!=="play"){if(state!=="over")go();return}
+    f();
+    if(rp){stopRep();hold=setTimeout(()=>{rep=setInterval(f,70)},200)}
+  };
+  b.onpointerup=b.onpointerleave=b.onpointercancel=stopRep;
+});
+const KEYS={ArrowLeft:"l",a:"l",ArrowRight:"r",d:"r",ArrowDown:"d",s:"d",ArrowUp:"rot",w:"rot",x:"rot"," ":"drop"};
+addEventListener("keydown",e=>{
+  if(e.key==="Enter"&&state!=="play"){go();return}
+  const k=KEYS[e.key];if(!k)return;
+  e.preventDefault();
+  if(state!=="play"){if(state!=="over")go();return}
+  ACT[k]();
+});
+let gx=null,gy0=0,gm=0;
+cv.addEventListener("pointerdown",e=>{if(state!=="play")return;gx=e.clientX;gy0=e.clientY;gm=0;cv.setPointerCapture(e.pointerId)});
+cv.addEventListener("pointermove",e=>{
+  if(gx===null)return;
+  const w=cv.clientWidth/C;
+  while(Math.abs(e.clientX-gx)>=w){const s=Math.sign(e.clientX-gx);move(s,0);gx+=s*w;gm=1}
+});
+cv.addEventListener("pointerup",e=>{
+  if(gx===null)return;
+  const dy=e.clientY-gy0;
+  if(!gm){if(dy>70)hardDrop();else if(Math.abs(dy)<12)rotate()}
+  gx=null;
+});
+cv.addEventListener("pointercancel",()=>{gx=null});
+msg.onclick=go;
+document.addEventListener("visibilitychange",()=>{if(document.hidden&&state==="play"){state="pause";show("PAUSADO","Toque para continuar")}});
+
+reset();
+show("EMPILHA","Arraste para mover, toque para girar,<br>deslize para baixo para largar.<br>Toque para começar");
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
