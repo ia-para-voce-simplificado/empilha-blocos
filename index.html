@@ -26,27 +26,29 @@ button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
 .pad button{width:58px;height:52px;border:1.5px solid var(--violet);background:#15112e;font-size:20px;border-radius:8px}
 .pad button:active{background:var(--violet)}
 .pad .hi{border-color:var(--lime)}
+.top{display:flex;align-items:center;gap:14px}
+#mt{width:44px;height:36px;border:1.5px solid var(--violet);background:#15112e;border-radius:8px;font-size:18px;line-height:1}
 :focus-visible{outline:3px solid var(--lime);outline-offset:2px}
 </style>
 </head>
 <body>
-<h1>EMPILHA</h1>
+<div class="top"><h1>EMPILHA</h1><button id="mt" aria-label="Som" aria-pressed="false">&#128266;</button></div>
 <div class="row">
   <div class="stage"><canvas id="cv"></canvas><div id="msg" role="button" tabindex="0"></div></div>
   <div class="side">
     <div>Pontos<b id="sc">0</b></div>
     <div>Linhas<b id="ln">0</b></div>
-    <div>Nível<b id="lv">1</b></div>
+    <div>N&#237;vel<b id="lv">1</b></div>
     <div>Recorde<b id="bs">0</b></div>
-    <div>Próximas<canvas id="nx"></canvas></div>
+    <div>Pr&#243;ximas<canvas id="nx"></canvas></div>
   </div>
 </div>
 <div class="pad">
-  <button data-a="l" aria-label="Esquerda">◀</button>
-  <button data-a="d" aria-label="Descer">▼</button>
-  <button data-a="r" aria-label="Direita">▶</button>
-  <button data-a="rot" class="hi" aria-label="Girar">⟳</button>
-  <button data-a="drop" class="hi" aria-label="Largar">⤓</button>
+  <button data-a="l" aria-label="Esquerda">&#9664;</button>
+  <button data-a="d" aria-label="Descer">&#9660;</button>
+  <button data-a="r" aria-label="Direita">&#9654;</button>
+  <button data-a="rot" class="hi" aria-label="Girar">&#10227;</button>
+  <button data-a="drop" class="hi" aria-label="Largar">&#10515;</button>
 </div>
 <script>
 const C=10,N=20,T=24,S=16;
@@ -65,6 +67,31 @@ nx.width=4*S*2;nx.height=9*S*2;y.scale(2,2);
 let board,cur,queue,bag,score,lines,level,tick,state="ready",best=0;
 try{best=+localStorage.getItem("empilha")||0}catch(e){}
 const rot=m=>m[0].map((_,i)=>m.map(r=>r[i]).reverse());
+let ac,mg,mute=false,step=0,nextT=0;
+try{mute=localStorage.getItem("empilha-mute")==="1"}catch(e){}
+const VOL=.3,fq=n=>440*2**((n-69)/12);
+const BASS=[45,41,48,43],CH=[[57,60,64],[53,57,60],[55,60,64],[55,59,62]],ARP=[0,1,2,1,0,1,2,1];
+const LEAD=[76,0,72,74,76,0,79,76, 77,0,74,72,74,0,72,69, 72,0,76,79,76,0,72,67, 74,0,71,74,79,76,74,71];
+function note(n,t,d,type,v){const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.value=fq(n);g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g);g.connect(mg);o.start(t);o.stop(t+d)}
+function sched(){
+  const q=60/(120+Math.min(level-1,8)*5)/2;
+  while(nextT<ac.currentTime+.15){
+    const s=step%32,b=s>>3,i=s&7;
+    if(i%2===0)note(BASS[b],nextT,q*1.8,"triangle",.5);
+    note(CH[b][ARP[i]]+12,nextT,q*.8,"square",.12);
+    if(LEAD[s])note(LEAD[s],nextT,q*1.5,"square",.18);
+    nextT+=q;step++;
+  }
+}
+function music(on){
+  if(!ac){
+    if(!on)return;
+    const A=window.AudioContext||window.webkitAudioContext;if(!A)return;
+    ac=new A();mg=ac.createGain();mg.gain.value=mute?0:VOL;mg.connect(ac.destination);
+    nextT=ac.currentTime+.1;setInterval(sched,50);
+  }
+  on?ac.resume():ac.suspend();
+}
 function newBag(){const a=[0,1,2,3,4,5,6];for(let i=6;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a}
 const draw7=()=>{if(!bag.length)bag=newBag();return bag.pop()};
 function hit(m,px,py){return m.some((row,i)=>row.some((v,j)=>{if(!v)return false;const X=px+j,Y=py+i;return X<0||X>=C||Y>=N||(Y>=0&&board[Y][X])}))}
@@ -76,9 +103,9 @@ function spawn(){
   const m=P[id].map(r=>[...r]);
   cur={id,m,x:(C-m.length)/2|0,y:0};
   mini();
-  if(hit(cur.m,cur.x,cur.y)){state="over";saveBest();show("FIM DE JOGO","Pontos: "+score+" · Recorde: "+best+"<br>Toque para jogar de novo")}
+  if(hit(cur.m,cur.x,cur.y)){state="over";music(false);saveBest();show("FIM DE JOGO","Pontos: "+score+" \u00b7 Recorde: "+best+"<br>Toque para jogar de novo")}
 }
-function go(){if(state==="over")reset();state="play";msg.hidden=true}
+function go(){if(state==="over")reset();state="play";msg.hidden=true;music(true)}
 function move(dx,dy){
   if(state!=="play"||hit(cur.m,cur.x+dx,cur.y+dy))return false;
   cur.x+=dx;cur.y+=dy;return true;
@@ -171,10 +198,13 @@ cv.addEventListener("pointerup",e=>{
 });
 cv.addEventListener("pointercancel",()=>{gx=null});
 msg.onclick=go;
-document.addEventListener("visibilitychange",()=>{if(document.hidden&&state==="play"){state="pause";show("PAUSADO","Toque para continuar")}});
+const mt=$("#mt"),setMt=()=>{mt.textContent=mute?"\ud83d\udd07":"\ud83d\udd0a";mt.setAttribute("aria-pressed",mute)};
+setMt();
+mt.onclick=()=>{mute=!mute;if(mg)mg.gain.value=mute?0:VOL;try{localStorage.setItem("empilha-mute",mute?"1":"0")}catch(e){}setMt();mt.blur()};
+document.addEventListener("visibilitychange",()=>{if(document.hidden&&state==="play"){state="pause";music(false);show("PAUSADO","Toque para continuar")}});
 
 reset();
-show("EMPILHA","Arraste para mover, toque para girar,<br>deslize para baixo para largar.<br>Toque para começar");
+show("EMPILHA","Arraste para mover, toque para girar,<br>deslize para baixo para largar.<br>Toque para come\u00e7ar");
 requestAnimationFrame(loop);
 </script>
 </body>
